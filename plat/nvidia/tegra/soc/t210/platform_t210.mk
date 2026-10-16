@@ -40,7 +40,10 @@ BL31_SOURCES		+=	${TEGRA_GICv2_SOURCES}				\
 				${SOC_DIR}/plat_setup.c				\
 				${SOC_DIR}/drivers/se/security_engine.c		\
 				${SOC_DIR}/plat_secondary.c			\
-				${SOC_DIR}/plat_sip_calls.c
+				${SOC_DIR}/plat_sip_calls.c			\
+				${SOC_DIR}/plat_trng.c
+
+TRNG_SUPPORT			:=	1
 
 # Enable workarounds for selected Cortex-A57 erratas.
 A57_DISABLE_NON_TEMPORAL_HINT	:=	1

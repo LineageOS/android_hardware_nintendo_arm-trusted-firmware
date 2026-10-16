@@ -13,6 +13,7 @@
 #include <lib/mmio.h>
 #include <lib/psci/psci.h>
 #include <se_private.h>
+#include <string.h>
 #include <security_engine.h>
 #include <tegra_platform.h>
 
@@ -1074,4 +1075,60 @@ void tegra_se_resume(void)
 	if (tegra_chipid_is_t210_b01()) {
 		tegra_se_warm_boot_resume(&se_dev_2);
 	}
+}
+
+static uint8_t se_rng_buf[TEGRA_SE_AES_BLOCK_SIZE] __aligned(CACHE_WRITEBACK_GRANULE);
+
+int tegra_se_generate_random(uint64_t *out)
+{
+	tegra_se_dev_t *se_dev = &se_dev_1;
+	uint32_t clk_v, clk_w, val;
+	int ret;
+
+	if ((mmio_read_32(TEGRA_MC_BASE + MC_SMMU_PPCS_ASID_0) & PPCS_SMMU_ENABLE) != 0U) {
+		return -EPERM;
+	}
+
+	clk_v = mmio_read_32(TEGRA_CAR_RESET_BASE + TEGRA_CLK_OUT_ENB_V);
+	clk_w = mmio_read_32(TEGRA_CAR_RESET_BASE + TEGRA_CLK_OUT_ENB_W);
+	tegra_se_enable_clocks();
+
+	se_dev->src_ll_buf->last_buff_num = 0;
+	se_dev->dst_ll_buf->last_buff_num = 0;
+	se_dev->dst_ll_buf->buffer[0].addr = (uint64_t)se_rng_buf;
+	se_dev->dst_ll_buf->buffer[0].data_len = sizeof(se_rng_buf);
+
+	val = (SE_CONFIG_ENC_ALG_RNG |
+		SE_CONFIG_DEC_ALG_NOP |
+		SE_CONFIG_ENC_MODE_KEY192 |
+		SE_CONFIG_DST_MEMORY);
+	tegra_se_write_32(se_dev, SE_CONFIG_REG_OFFSET, val);
+
+	val = (SE_CRYPTO_INPUT_RANDOM |
+		SE_CRYPTO_XOR_BYPASS |
+		SE_CRYPTO_CORE_ENCRYPT |
+		SE_CRYPTO_HASH_DISABLE |
+		SE_CRYPTO_KEY_INDEX(RNG_AES_KEY_INDEX) |
+		SE_CRYPTO_IV_ORIGINAL);
+	tegra_se_write_32(se_dev, SE_CRYPTO_REG_OFFSET, val);
+
+	tegra_se_write_32(se_dev, SE_RNG_CONFIG_REG_OFFSET,
+			  DRBG_MODE_FORCE_RESEED | DRBG_SRC_ENTROPY);
+
+	inv_dcache_range((uintptr_t)se_rng_buf, sizeof(se_rng_buf));
+
+	ret = tegra_se_start_normal_operation(se_dev, sizeof(se_rng_buf));
+	if (ret == 0) {
+		inv_dcache_range((uintptr_t)se_rng_buf, sizeof(se_rng_buf));
+		memcpy(out, se_rng_buf, sizeof(*out));
+	}
+
+	if ((clk_v & SE_CLK_ENB_BIT) == 0U) {
+		mmio_clrbits_32(TEGRA_CAR_RESET_BASE + TEGRA_CLK_OUT_ENB_V, SE_CLK_ENB_BIT);
+	}
+	if ((clk_w & ENTROPY_CLK_ENB_BIT) == 0U) {
+		mmio_clrbits_32(TEGRA_CAR_RESET_BASE + TEGRA_CLK_OUT_ENB_W, ENTROPY_CLK_ENB_BIT);
+	}
+
+	return ret;
 }

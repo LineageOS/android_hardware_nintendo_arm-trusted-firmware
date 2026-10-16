@@ -56,5 +56,6 @@ int tegra_se_suspend(void);
 void tegra_se_resume(void);
 int tegra_se_save_tzram(void);
 int32_t tegra_se_save_sha256_hash(uint64_t bl31_base, uint32_t src_len_inbyte);
+int tegra_se_generate_random(uint64_t *out);
 
 #endif /* SECURITY_ENGINE_H */
